@@ -853,7 +853,8 @@ impl GraphicsContext {
             FullscreenType::Windowed => {
                 window.set_fullscreen(None);
                 window.set_decorations(!mode.borderless);
-                window.set_inner_size(mode.actual_size()?);
+                window.set_min_inner_size(Some(mode.actual_size()?));
+                window.set_max_inner_size(Some(mode.actual_size()?));
                 window.set_resizable(mode.resizable);
                 window.set_maximized(mode.maximized);
             }
