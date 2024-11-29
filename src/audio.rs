@@ -322,13 +322,15 @@ impl SoundSource for Source {
         let counter = self.state.play_time.clone();
         let period_mus = self.state.query_interval.as_secs() as usize * 1_000_000
             + self.state.query_interval.subsec_micros() as usize;
+        // We can't give zero here so give 1µs which is quite the same
+        let fade_in = self.state.fade_in.max(time::Duration::from_micros(1));
 
         if self.state.repeat {
             let sound = rodio::Decoder::new(cursor)?
                 .repeat_infinite()
                 .skip_duration(self.state.skip_duration)
                 .speed(self.state.speed)
-                .fade_in(self.state.fade_in)
+                .fade_in(fade_in)
                 .periodic_access(self.state.query_interval, move |_| {
                     let _ = counter.fetch_add(period_mus, Ordering::SeqCst);
                 });
@@ -337,7 +339,7 @@ impl SoundSource for Source {
             let sound = rodio::Decoder::new(cursor)?
                 .skip_duration(self.state.skip_duration)
                 .speed(self.state.speed)
-                .fade_in(self.state.fade_in)
+                .fade_in(fade_in)
                 .periodic_access(self.state.query_interval, move |_| {
                     let _ = counter.fetch_add(period_mus, Ordering::SeqCst);
                 });
@@ -503,13 +505,15 @@ impl SoundSource for SpatialSource {
         let counter = self.state.play_time.clone();
         let period_mus = self.state.query_interval.as_secs() as usize * 1_000_000
             + self.state.query_interval.subsec_micros() as usize;
+        // We can't give zero here so give 1µs which is quite the same
+        let fade_in = self.state.fade_in.min(time::Duration::from_micros(1));
 
         if self.state.repeat {
             let sound = rodio::Decoder::new(cursor)?
                 .repeat_infinite()
                 .skip_duration(self.state.skip_duration)
                 .speed(self.state.speed)
-                .fade_in(self.state.fade_in)
+                .fade_in(fade_in)
                 .periodic_access(self.state.query_interval, move |_| {
                     let _ = counter.fetch_add(period_mus, Ordering::SeqCst);
                 });
@@ -518,7 +522,7 @@ impl SoundSource for SpatialSource {
             let sound = rodio::Decoder::new(cursor)?
                 .skip_duration(self.state.skip_duration)
                 .speed(self.state.speed)
-                .fade_in(self.state.fade_in)
+                .fade_in(fade_in)
                 .periodic_access(self.state.query_interval, move |_| {
                     let _ = counter.fetch_add(period_mus, Ordering::SeqCst);
                 });
