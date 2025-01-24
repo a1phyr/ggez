@@ -328,15 +328,9 @@ where
             HasMut::<ContextFields>::retrieve_mut(&mut self.ctx).quit_requested = false;
             if let Ok(false) = res {
                 HasMut::<ContextFields>::retrieve_mut(&mut self.ctx).continuing = false;
-            } else if catch_error(
-                &mut self.ctx,
-                res,
-                &mut self.state,
-                event_loop,
-                ErrorOrigin::QuitEvent,
-            ) {
-                event_loop.exit();
             }
+
+            let _ = self.catch_error(res, event_loop, ErrorOrigin::QuitEvent);
         }
         if !HasMut::<ContextFields>::retrieve_mut(&mut self.ctx).continuing {
             event_loop.exit();
@@ -361,47 +355,30 @@ where
         // ggez's internal state however necessary.
         process_window_event(&mut self.ctx, &mut window_id, &mut event);
 
-        match event {
+        let (res, origin) = match event {
             WindowEvent::Resized(logical_size) => {
                 let res = self.state.resize_event(
                     &mut self.ctx,
                     logical_size.width as f32,
                     logical_size.height as f32,
                 );
-                if catch_error(
-                    &mut self.ctx,
-                    res,
-                    &mut self.state,
-                    event_loop,
-                    ErrorOrigin::ResizeEvent,
-                ) {}
+                (res, ErrorOrigin::ResizeEvent)
             }
             WindowEvent::CloseRequested => {
                 let res = self.state.quit_event(&mut self.ctx);
                 if let Ok(false) = res {
                     HasMut::<ContextFields>::retrieve_mut(&mut self.ctx).continuing = false;
-                } else if catch_error(
-                    &mut self.ctx,
-                    res,
-                    &mut self.state,
-                    event_loop,
-                    ErrorOrigin::QuitEvent,
-                ) {
                 }
+                (res.map(|_| ()), ErrorOrigin::QuitEvent)
             }
-            WindowEvent::Focused(gained) => {
-                let res = self.state.focus_event(&mut self.ctx, gained);
-                if catch_error(
-                    &mut self.ctx,
-                    res,
-                    &mut self.state,
-                    event_loop,
-                    ErrorOrigin::FocusEvent,
-                ) {}
-            }
+            WindowEvent::Focused(gained) => (
+                self.state.focus_event(&mut self.ctx, gained),
+                ErrorOrigin::FocusEvent,
+            ),
             WindowEvent::ModifiersChanged(modifiers) => {
                 HasMut::<input::keyboard::KeyboardContext>::retrieve_mut(&mut self.ctx)
-                    .active_modifiers = modifiers.state()
+                    .active_modifiers = modifiers.state();
+                return;
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 let mods = HasMut::<input::keyboard::KeyboardContext>::retrieve_mut(&mut self.ctx)
@@ -412,7 +389,8 @@ where
                         .is_key_repeated();
                 let key_state = event.state;
                 let input = KeyInput { event, mods };
-                let (res, origin) = match key_state {
+
+                match key_state {
                     ElementState::Pressed => (
                         self.state.key_down_event(&mut self.ctx, input, repeat),
                         ErrorOrigin::KeyDownEvent,
@@ -421,8 +399,7 @@ where
                         self.state.key_up_event(&mut self.ctx, input),
                         ErrorOrigin::KeyUpEvent,
                     ),
-                };
-                if catch_error(&mut self.ctx, res, &mut self.state, event_loop, origin) {}
+                }
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 let gfx = HasMut::<GraphicsContext>::retrieve_mut(&mut self.ctx);
@@ -434,23 +411,15 @@ where
                         (x, y)
                     }
                 };
-                let res = self.state.mouse_wheel_event(&mut self.ctx, x, y);
-                if catch_error(
-                    &mut self.ctx,
-                    res,
-                    &mut self.state,
-                    event_loop,
+                (
+                    self.state.mouse_wheel_event(&mut self.ctx, x, y),
                     ErrorOrigin::MouseWheelEvent,
-                ) {}
+                )
             }
-            WindowEvent::MouseInput {
-                state: element_state,
-                button,
-                ..
-            } => {
+            WindowEvent::MouseInput { state, button, .. } => {
                 let position =
                     HasMut::<input::mouse::MouseContext>::retrieve_mut(&mut self.ctx).position();
-                match element_state {
+                match state {
                     ElementState::Pressed => {
                         let res = self.state.mouse_button_down_event(
                             &mut self.ctx,
@@ -458,13 +427,7 @@ where
                             position.x,
                             position.y,
                         );
-                        if catch_error(
-                            &mut self.ctx,
-                            res,
-                            &mut self.state,
-                            event_loop,
-                            ErrorOrigin::MouseButtonDownEvent,
-                        ) {}
+                        (res, ErrorOrigin::MouseButtonDownEvent)
                     }
                     ElementState::Released => {
                         let res = self.state.mouse_button_up_event(
@@ -473,13 +436,7 @@ where
                             position.x,
                             position.y,
                         );
-                        if catch_error(
-                            &mut self.ctx,
-                            res,
-                            &mut self.state,
-                            event_loop,
-                            ErrorOrigin::MouseButtonUpEvent,
-                        ) {}
+                        (res, ErrorOrigin::MouseButtonUpEvent)
                     }
                 }
             }
@@ -495,13 +452,7 @@ where
                     delta.x,
                     delta.y,
                 );
-                if catch_error(
-                    &mut self.ctx,
-                    res,
-                    &mut self.state,
-                    event_loop,
-                    ErrorOrigin::MouseMotionEvent,
-                ) {}
+                (res, ErrorOrigin::MouseMotionEvent)
             }
             WindowEvent::Touch(touch) => {
                 let res = self.state.touch_event(
@@ -510,38 +461,23 @@ where
                     touch.location.x,
                     touch.location.y,
                 );
-                if catch_error(
-                    &mut self.ctx,
-                    res,
-                    &mut self.state,
-                    event_loop,
-                    ErrorOrigin::TouchEvent,
-                ) {}
+                (res, ErrorOrigin::TouchEvent)
             }
-            WindowEvent::CursorEntered { device_id: _ } => {
-                let res = self.state.mouse_enter_or_leave(&mut self.ctx, true);
-                if catch_error(
-                    &mut self.ctx,
-                    res,
-                    &mut self.state,
-                    event_loop,
-                    ErrorOrigin::MouseEnterOrLeave,
-                ) {}
-            }
-            WindowEvent::CursorLeft { device_id: _ } => {
-                let res = self.state.mouse_enter_or_leave(&mut self.ctx, false);
-                if catch_error(
-                    &mut self.ctx,
-                    res,
-                    &mut self.state,
-                    event_loop,
-                    ErrorOrigin::MouseEnterOrLeave,
-                ) {}
-            }
+            WindowEvent::CursorEntered { device_id: _ } => (
+                self.state.mouse_enter_or_leave(&mut self.ctx, true),
+                ErrorOrigin::MouseEnterOrLeave,
+            ),
+            WindowEvent::CursorLeft { device_id: _ } => (
+                self.state.mouse_enter_or_leave(&mut self.ctx, false),
+                ErrorOrigin::MouseEnterOrLeave,
+            ),
             _x => {
                 // trace!("ignoring window event {:?}", x);
+                return;
             }
-        }
+        };
+
+        let _ = self.catch_error(res, event_loop, origin);
     }
 
     fn device_event(
@@ -559,13 +495,7 @@ where
             let res = self
                 .state
                 .raw_mouse_motion_event(&mut self.ctx, delta.0, delta.0);
-            if catch_error(
-                &mut self.ctx,
-                res,
-                &mut self.state,
-                event_loop,
-                ErrorOrigin::RawMouseMotionEvent,
-            ) {}
+            let _ = self.catch_error(res, event_loop, ErrorOrigin::RawMouseMotionEvent);
         }
     }
 
@@ -587,61 +517,37 @@ where
         while let Some(gilrs::Event { id, event, .. }) =
             HasMut::<input::gamepad::GamepadContext>::retrieve_mut(&mut self.ctx).next_event()
         {
-            match event {
+            let id = GamepadId(id);
+
+            let (res, origin) = match event {
                 gilrs::EventType::ButtonPressed(button, _) => {
-                    let res =
-                        self.state
-                            .gamepad_button_down_event(&mut self.ctx, button, GamepadId(id));
-                    if catch_error(
-                        &mut self.ctx,
-                        res,
-                        &mut self.state,
-                        event_loop,
-                        ErrorOrigin::GamepadButtonDownEvent,
-                    ) {
-                        return;
-                    };
+                    let res = self
+                        .state
+                        .gamepad_button_down_event(&mut self.ctx, button, id);
+                    (res, ErrorOrigin::GamepadButtonDownEvent)
                 }
                 gilrs::EventType::ButtonReleased(button, _) => {
-                    let res =
-                        self.state
-                            .gamepad_button_up_event(&mut self.ctx, button, GamepadId(id));
-                    if catch_error(
-                        &mut self.ctx,
-                        res,
-                        &mut self.state,
-                        event_loop,
-                        ErrorOrigin::GamepadButtonUpEvent,
-                    ) {
-                        return;
-                    };
+                    let res = self
+                        .state
+                        .gamepad_button_up_event(&mut self.ctx, button, id);
+                    (res, ErrorOrigin::GamepadButtonUpEvent)
                 }
                 gilrs::EventType::AxisChanged(axis, value, _) => {
-                    let res =
-                        self.state
-                            .gamepad_axis_event(&mut self.ctx, axis, value, GamepadId(id));
-                    if catch_error(
-                        &mut self.ctx,
-                        res,
-                        &mut self.state,
-                        event_loop,
-                        ErrorOrigin::GamepadAxisEvent,
-                    ) {
-                        return;
-                    };
+                    let res = self
+                        .state
+                        .gamepad_axis_event(&mut self.ctx, axis, value, id);
+                    (res, ErrorOrigin::GamepadAxisEvent)
                 }
-                _ => {}
-            }
+                _ => continue,
+            };
+
+            if self.catch_error(res, event_loop, origin) {
+                return;
+            };
         }
 
         let res = self.state.update(&mut self.ctx);
-        if catch_error(
-            &mut self.ctx,
-            res,
-            &mut self.state,
-            event_loop,
-            ErrorOrigin::Update,
-        ) {
+        if self.catch_error(res, event_loop, ErrorOrigin::Update) {
             return;
         };
 
@@ -678,27 +584,33 @@ where
     }
 }
 
-fn catch_error<T, C, E, S>(
-    ctx: &mut C,
-    event_result: Result<T, E>,
-    state: &mut S,
-    event_loop: &ActiveEventLoop,
-    origin: ErrorOrigin,
-) -> bool
+impl<S, C, E> GgezApplicationHandler<S, C, E>
 where
-    S: EventHandler<C, E> + 'static,
+    S: EventHandler<C, E>,
     E: std::fmt::Debug,
-    C: HasMut<ContextFields> + HasMut<input::mouse::MouseContext>,
+    C: 'static
+        + HasMut<ContextFields>
+        + HasMut<GraphicsContext>
+        + HasMut<input::keyboard::KeyboardContext>
+        + HasMut<input::mouse::MouseContext>
+        + HasMut<GamepadContext>
+        + HasMut<crate::timer::TimeContext>,
 {
-    if let Err(e) = event_result {
-        error!("Error on EventHandler {origin:?}: {e:?}");
-        eprintln!("Error on EventHandler {origin:?}: {e:?}");
-        if state.on_error(ctx, origin, e) {
-            event_loop.exit();
-            return true;
+    fn catch_error<T>(
+        &mut self,
+        event_result: Result<T, E>,
+        event_loop: &ActiveEventLoop,
+        origin: ErrorOrigin,
+    ) -> bool {
+        if let Err(e) = event_result {
+            error!("Error on EventHandler {origin:?}: {e:?}");
+            if self.state.on_error(&mut self.ctx, origin, e) {
+                event_loop.exit();
+                return true;
+            }
         }
+        false
     }
-    false
 }
 
 /// Feeds an `Event` into the `Context` so it can update any internal
@@ -717,12 +629,8 @@ where
         + HasMut<input::mouse::MouseContext>,
 {
     match event {
-        Event::DeviceEvent { device_id, event } => {
-            process_device_event(ctx, device_id, event);
-        }
-        Event::WindowEvent { window_id, event } => {
-            process_window_event(ctx, window_id, event);
-        }
+        Event::DeviceEvent { device_id, event } => process_device_event(ctx, device_id, event),
+        Event::WindowEvent { window_id, event } => process_window_event(ctx, window_id, event),
         _ => (),
     }
 }
