@@ -607,8 +607,14 @@ impl GraphicsContext {
         let frame = loop {
             match self.surface.get_current_texture() {
                 wgpu::CurrentSurfaceTexture::Success(frame) => break frame,
-                wgpu::CurrentSurfaceTexture::Suboptimal(_)
-                | wgpu::CurrentSurfaceTexture::Outdated => self.reconfigure_surface(),
+                wgpu::CurrentSurfaceTexture::Suboptimal(tex) => {
+                    // Drop the SurfaceTexture before reconfiguring the surface,
+                    // otherwise wgpu panics with "SurfaceOutput must be dropped
+                    // before a new Surface is made" (issue ggez/ggez#1273).
+                    drop(tex);
+                    self.reconfigure_surface();
+                }
+                wgpu::CurrentSurfaceTexture::Outdated => self.reconfigure_surface(),
                 wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
                     // TODO: Add proper way to skip frame
                     continue;
