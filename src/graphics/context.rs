@@ -711,6 +711,7 @@ impl GraphicsContext {
             std::mem::drop(present_pass);
 
             let _ = self.wgpu.queue.submit([fcx.cmd.finish()]);
+            self.window.pre_present_notify();
             fcx.frame.present();
 
             Ok(())
